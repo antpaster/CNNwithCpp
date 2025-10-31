@@ -1,3 +1,7 @@
+# python setup.py clean --all
+# python setup.py build_ext --inplace
+
+
 from setuptools import setup
 from torch.utils.cpp_extension import CppExtension, BuildExtension
 
