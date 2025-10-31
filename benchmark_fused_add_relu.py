@@ -1,6 +1,6 @@
 import torch
 import time
-import fused_add_relu_ext
+import fused_add_relu_ext_openmp_simd as fused_add_relu_ext
 import matplotlib.pyplot as plt
 
 def benchmark(func, a, b, warmup=5, repeat=20):
