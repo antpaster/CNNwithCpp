@@ -1,0 +1,26 @@
+105224472 function calls (104759317 primitive calls) in 794.954 seconds
+
+   Ordered by: cumulative time
+   List reduced from 431 to 20 due to restriction <20>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    1.772    1.772  794.954  794.954 c:\Users\antpa\Documents\gnidoC\PythonProjects\CNNwithCpp\vgg_example.py:54(training_loop)
+     9380    0.127    0.000  318.576    0.034 C:\Users\antpa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\torch\_tensor.py:592(backward)
+     9380    0.227    0.000  318.446    0.034 C:\Users\antpa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\torch\autograd\__init__.py:243(backward)
+     9380    0.128    0.000  317.588    0.034 C:\Users\antpa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\torch\autograd\graph.py:820(_engine_run_backward)
+     9380  317.434    0.034  317.434    0.034 {method 'run_backward' of 'torch._C._EngineBase' objects}
+870540/718860    2.246    0.000  280.480    0.000 C:\Users\antpa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\torch\nn\modules\module.py:1769(_wrapped_call_impl)
+870540/718860    3.502    0.000  278.958    0.000 C:\Users\antpa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\torch\nn\modules\module.py:1777(_call_impl)
+     9480    0.255    0.000  216.425    0.023 c:\Users\antpa\Documents\gnidoC\PythonProjects\CNNwithCpp\vgg_example.py:32(forward)
+    18960    0.743    0.000  215.854    0.011 C:\Users\antpa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\torch\nn\modules\container.py:242(forward)
+     9500    0.197    0.000  207.467    0.022 C:\Users\antpa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\torch\utils\data\dataloader.py:729(__next__)
+     9500    1.918    0.000  205.909    0.022 C:\Users\antpa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\torch\utils\data\dataloader.py:788(_next_data)
+     9480    0.064    0.000  203.604    0.021 C:\Users\antpa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\torch\utils\data\_utils\fetch.py:47(fetch)
+     9480    0.829    0.000  201.165    0.021 C:\Users\antpa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\torch\utils\data\_utils\fetch.py:52(<listcomp>)
+   700000   13.606    0.000  200.336    0.000 C:\Users\antpa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\torchvision\datasets\mnist.py:131(__getitem__)
+   700000    2.418    0.000  155.743    0.000 C:\Users\antpa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\torchvision\transforms\transforms.py:93(__call__)
+    37920    0.463    0.000  140.509    0.004 C:\Users\antpa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\torch\nn\modules\conv.py:547(forward)
+    37920    0.285    0.000  139.913    0.004 C:\Users\antpa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\torch\nn\modules\conv.py:530(_conv_forward)
+    37920  139.628    0.004  139.628    0.004 {built-in method torch.conv2d}
+   700000    2.243    0.000   90.420    0.000 C:\Users\antpa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\torchvision\transforms\transforms.py:129(__call__)
+   700000    9.661    0.000   88.177    0.000 C:\Users\antpa\AppData\Local\Packages\PythonSoftwareFoundation.Python.3.11_qbz5n2kfra8p0\LocalCache\local-packages\Python311\site-packages\torchvision\transforms\functional.py:127(to_tensor)
