@@ -4,6 +4,7 @@
 #include <string>
 #include <stdexcept>
 #include <iostream>
+#include <omp.h>
 
 namespace py = pybind11;
 
@@ -53,25 +54,53 @@ struct MNISTDataset {
         if (num_images != num_labels)
             throw std::runtime_error("Image/label count mismatch");
 
-        images.reserve(num_images);
-        labels.reserve(num_images);
+        // images.reserve(num_images);
+        // labels.reserve(num_images);
 
-        std::vector<unsigned char> buffer(num_rows * num_cols);
+        // std::vector<unsigned char> buffer(num_rows * num_cols);
 
-        for (uint32_t i = 0; i < num_images; ++i) {
-            label_file.read(reinterpret_cast<char *>(buffer.data()), 0); // skip validation
-            unsigned char label;
-            label_file.read(reinterpret_cast<char *>(&label), 1);
+        // for (uint32_t i = 0; i < num_images; ++i) {
+        //     label_file.read(reinterpret_cast<char *>(buffer.data()), 0); // skip validation
+        //     unsigned char label;
+        //     label_file.read(reinterpret_cast<char *>(&label), 1);
 
-            image_file.read(reinterpret_cast<char *>(buffer.data()), num_rows * num_cols);
+        //     image_file.read(reinterpret_cast<char *>(buffer.data()), num_rows * num_cols);
+        //     torch::Tensor img = torch::from_blob(
+        //         buffer.data(),
+        //         {1, (long)num_rows, (long)num_cols},
+        //         torch::kUInt8).clone().to(torch::kFloat32).div_(255.0);
+
+        //     images.push_back(img);
+        //     labels.push_back((int64_t)label);
+        // }
+
+        const size_t image_size = num_rows * num_cols;
+        std::vector<unsigned char> img_bytes(num_images * image_size);
+        std::vector<unsigned char> label_bytes(num_labels);
+
+        // --- read all bytes at once ---
+        image_file.read(reinterpret_cast<char *>(img_bytes.data()), num_images * image_size);
+        label_file.read(reinterpret_cast<char *>(label_bytes.data()), num_labels);
+
+        images.resize(num_images);
+        labels.resize(num_images);
+
+        // --- Parallel decoding ---
+        #pragma omp parallel for schedule(static)
+        for (int64_t i = 0; i < static_cast<int64_t>(num_images); ++i) {
+            unsigned char *img_ptr = img_bytes.data() + i * image_size;
             torch::Tensor img = torch::from_blob(
-                buffer.data(),
+                img_ptr,
                 {1, (long)num_rows, (long)num_cols},
-                torch::kUInt8).clone().to(torch::kFloat32).div_(255.0);
+                torch::kUInt8
+            ).clone().to(torch::kFloat32).div_(255.0);
 
-            images.push_back(img);
-            labels.push_back((int64_t)label);
+            images[i] = std::move(img);
+            labels[i] = static_cast<int64_t>(label_bytes[i]);
         }
+
+        std::cout << "Loaded " << num_images << " images using "
+                  << omp_get_max_threads() << " threads.\n";
     }
 
     torch::Tensor get_image(int64_t index) const { return images[index]; }
