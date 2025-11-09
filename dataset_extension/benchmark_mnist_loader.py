@@ -1,10 +1,10 @@
 import time
-import torch
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 # import cpp_mnist_dataset_ext_many_workers as cpp_mnist_dataset_ext
 # import cpp_mnist_dataset_ext_many_workers_openmp as cpp_mnist_dataset_ext
-import cpp_mnist_dataset_ext_many_workers_openmp_with_aug as cpp_mnist_dataset_ext
+# import cpp_mnist_dataset_ext_many_workers_openmp_with_aug as cpp_mnist_dataset_ext
+import cpp_mnist_dataset_simd_ext_openmp_aug_avx2 as cpp_mnist_dataset_ext
 
 def benchmark_loader(name, dataset, batch_size=64, num_workers=2, num_batches=500):
     loader = DataLoader(dataset, batch_size=batch_size, num_workers=num_workers)
@@ -35,12 +35,13 @@ def main():
         transform=transforms.Compose([
             transforms.RandomCrop(28, padding=2),
             transforms.RandomHorizontalFlip(),
+            transforms.ColorJitter(brightness=0.2),
             transforms.ToTensor(),
             transforms.Normalize((0.1307,), (0.3081,))
         ])
     )
 
-    torch_time = benchmark_loader("torchvision ToTensor", torchvision_ds, batch_size, num_workers)
+    torch_time = benchmark_loader("torchvision pipeline", torchvision_ds, batch_size, num_workers)
 
     # C++ extension
     print("\nC++ MNIST with augmentation (OpenMP)...")
@@ -53,9 +54,12 @@ def main():
     cpp_ds.set_pad(2)
     cpp_ds.set_flip_prob(0.5)
     cpp_ds.set_normalize(True)
-    cpp_time = benchmark_loader("C++ OpenMP loader", cpp_ds, batch_size, num_workers)
+    cpp_ds.set_mean_std(0.1307, 0.3081)
+    cpp_ds.set_brightness_max_delta(0.2)  # 20% brightness jitter
+    cpp_ds.set_num_threads(num_workers)
+    cpp_time = benchmark_loader("C++ OpenMP pipeline", cpp_ds, batch_size, num_workers)
 
-    print(f"Speedup with augmentation: {torch_time / cpp_time:.2f}x")
+    print(f"Speedup: {torch_time / cpp_time:.2f}x")
 
 if __name__ == "__main__":
     # torch.set_num_threads(1)
