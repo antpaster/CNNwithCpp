@@ -20,8 +20,8 @@ namespace py = pybind11;
 struct MNISTDataset {
     std::string images_path;
     std::string labels_path;
-    std::vector<torch::Tensor> images;
-    std::vector<int64_t> labels;
+    torch::Tensor images; // float32 tensor [N,1,H,W], contiguous
+    torch::Tensor labels; // int64 tensor [N]
 
     // augmentation params
     bool augment = false;
@@ -32,8 +32,8 @@ struct MNISTDataset {
     float brightness_max_delta = 0.0f; // if >0, multiply by (1 +/- delta)
     int num_threads = 0; // 0 => default omp
 
-    MNISTDataset(std::string images, std::string labels)
-        : images_path(std::move(images)), labels_path(std::move(labels)) {
+    MNISTDataset(const std::string& images_p, const std::string& labels_p)
+        : images_path(images_p), labels_path(labels_p) {
         load_data();
     }
 
@@ -77,43 +77,58 @@ struct MNISTDataset {
 
         uint32_t magic_labels = read_int(label_file);
         uint32_t num_labels = read_int(label_file);
-        if (num_images != num_labels)
+        if (num_images != num_labels) {
             throw std::runtime_error("Image/label count mismatch");
-
-        const size_t image_size = num_rows * num_cols;
-        std::vector<unsigned char> img_bytes(num_images * image_size);
-        std::vector<unsigned char> label_bytes(num_labels);
-
-        // --- read all bytes at once ---
-        image_file.read(reinterpret_cast<char *>(img_bytes.data()), num_images * image_size);
-        label_file.read(reinterpret_cast<char *>(label_bytes.data()), num_labels);
-
-        images.resize(num_images);
-        labels.resize(num_images);
-
-        // Parallel decode to float tensors
-        #pragma omp parallel
-        {
-            if (num_threads > 0) omp_set_num_threads(num_threads);
         }
+            
+        const int64_t N = (int64_t)num_images;
+        const int64_t H = (int64_t)num_rows;
+        const int64_t W = (int64_t)num_cols;
+        const int64_t img_size = H * W;
+
+        // read raw bytes into buffer (one big block)
+        std::vector<unsigned char> raw_imgs;
+        raw_imgs.resize((size_t)N * (size_t)img_size);
+        if (!image_file.read(reinterpret_cast<char*>(raw_imgs.data()), (std::streamsize)(N * img_size)))
+            throw std::runtime_error("Failed to read image bytes");
+
+        std::vector<unsigned char> raw_labels;
+        raw_labels.resize((size_t)N);
+        if (!label_file.read(reinterpret_cast<char*>(raw_labels.data()), (std::streamsize)N))
+            throw std::runtime_error("Failed to read label bytes");
+
+        // allocate big tensors
+        // images -> float32 [N,1,H,W]
+        images = torch::empty({N, 1, H, W}, torch::kFloat32);
+        labels = torch::empty({N}, torch::kLong);
+
+        // fill images in parallel (convert uint8->float /255.0)
+        // We'll write to contiguous memory of images tensor
+        float* img_data = images.data_ptr<float>();
+        int64_t stride_img = img_size; // per-sample float count
+
+        // set threads if requested
+        if (num_threads > 0) omp_set_num_threads(num_threads);
+        
         #pragma omp parallel for schedule(static)
-        for (int64_t i = 0; i < static_cast<int64_t>(num_images); ++i) {
-            unsigned char *img_ptr = img_bytes.data() + i * image_size;
-            torch::Tensor img = torch::from_blob(
-                img_ptr,
-                {1, (long)num_rows, (long)num_cols},
-                torch::kUInt8
-            ).clone().to(torch::kFloat32).div_(255.0);
-
-            images[i] = std::move(img);
-            labels[i] = static_cast<int64_t>(label_bytes[i]);
+        for (int64_t i = 0; i < N; ++i) {
+            const unsigned char* src = raw_imgs.data() + (size_t)i * (size_t)img_size;
+            float* dst = img_data + i * stride_img;
+            for (int64_t p = 0; p < img_size; ++p) {
+                dst[p] = static_cast<float>(src[p]) / 255.0f;
+            }
+            // set label
+            labels.data_ptr<int64_t>()[i] = static_cast<int64_t>(raw_labels[i]);
         }
 
-        std::cout << "Loaded " << num_images << " images using "
-                  << omp_get_max_threads() << " threads.\n";
+        // ensure contiguous & proper device
+        images = images.contiguous();
+        labels = labels.contiguous();
+
+        std::cout << "MNISTContiguous: loaded " << N << " images (" << H << "x" << W << ") using " << omp_get_max_threads() << " threads\n";
     }
 
-    // SIMD-normalize & brightness multiply in-place on contiguous float buffer
+    // SIMD-normalize & brightness
     static void simd_apply_brightness_normalize(float* data, int64_t len, float brightness, float mean, float stdv) {
 #if defined(__AVX2__)
         const int64_t simd_step = 8; // 8 floats per __m256
@@ -147,73 +162,76 @@ struct MNISTDataset {
 #endif
     }
 
-    // augment_image: do crop/pad/flip and then SIMD-normalize+brightness
-    torch::Tensor augment_image(const torch::Tensor &img) const {
-        // img shape: [1, H, W], float32 in [0,1]
-        auto out = img;
-        int H = img.size(1);
-        int W = img.size(2);
+    // apply brightness only
+    static void simd_apply_brightness(float* data, int64_t len, float brightness) {
+#if defined(__AVX2__)
+        const int64_t step = 8;
+        __m256 v_b = _mm256_set1_ps(brightness);
+        int64_t i = 0;
+        for (; i + step <= len; i += step) {
+            __m256 v = _mm256_loadu_ps(data + i);
+            v = _mm256_mul_ps(v, v_b);
+            _mm256_storeu_ps(data + i, v);
+        }
+        for (; i < len; ++i) data[i] *= brightness;
+#else
+        for (int64_t i = 0; i < len; ++i) data[i] *= brightness;
+#endif
+    }
 
-        static thread_local std::mt19937 gen(std::random_device{}());
-        std::uniform_real_distribution<float> flip_dist(0.0, 1.0);
+    // returns (tensor, label)
+    py::tuple get(int64_t index) const {
+        const int64_t N = images.size(0);
+        if (index < 0 || index >= N) throw std::out_of_range("Index out of range");
+
+        // if no augmentation -> return view (fast, zero-copy)
+        if (!augment) {
+            // view: [1, H, W] -> we return it (DataLoader will stack into batch)
+            torch::Tensor view = images[index]; // this is a view with shape [1,H,W]
+            int64_t lbl = labels.data_ptr<int64_t>()[index];
+            return py::make_tuple(view, lbl);
+        }
+
+        // If augmentation enabled: make a cloned tensor to modify
+        torch::Tensor sample = images[index].clone(); // float32 [1,H,W]
+        int64_t H = sample.size(1);
+        int64_t W = sample.size(2);
+
+        // RNG (thread local)
+        static thread_local std::mt19937 gen((std::random_device())());
+        std::uniform_real_distribution<float> flip_dist(0.0f, 1.0f);
         std::uniform_int_distribution<int> shift_dist(-pad, pad);
         std::uniform_real_distribution<float> bright_dist(1.0f - brightness_max_delta, 1.0f + brightness_max_delta);
 
-        // Crop with pad: perform padding (constant 0) then slice (safe torch ops)
-        if (augment && pad > 0) {
-            out = torch::constant_pad_nd(out, {pad, pad, pad, pad}, 0.0f);
+        // pad & random crop
+        if (pad > 0) {
+            sample = torch::constant_pad_nd(sample, {pad, pad, pad, pad}, 0.0f);
             int dy = shift_dist(gen);
             int dx = shift_dist(gen);
             int y0 = pad + dy;
             int x0 = pad + dx;
-            out = out.slice(1, y0, y0 + H).slice(2, x0, x0 + W);
+            sample = sample.slice(1, y0, y0 + H).slice(2, x0, x0 + W);
         }
 
-        // Flip
-        if (augment && flip_dist(gen) < flip_prob) {
-            out = out.flip({2}); // flip width dimension
-        }
+        // flip
+        if (flip_dist(gen) < flip_prob) sample = sample.flip({2});
 
-        // Now apply brightness + normalization on contiguous buffer
-        if (!out.is_contiguous()) out = out.contiguous();
-        float* ptr = out.data_ptr<float>();
-        int64_t len = (int64_t)H * W; // channel=1 omitted
+        // brightness + normalize (apply to contiguous buffer)
+        if (!sample.is_contiguous()) sample = sample.contiguous();
+        float* ptr = sample.data_ptr<float>();
+        int64_t len = H * W;
 
         float brightness = 1.0f;
         if (brightness_max_delta > 0.0f) brightness = bright_dist(gen);
 
-        if (normalize) {
-            simd_apply_brightness_normalize(ptr, len, brightness, mean, stdv);
-        } else {
-#if defined(__AVX2__)
-            // only brightness multiply
-            const int64_t simd_step = 8;
-            __m256 v_b = _mm256_set1_ps(brightness);
-            int64_t i = 0;
-            for (; i + simd_step <= len; i += simd_step) {
-                __m256 v = _mm256_loadu_ps(ptr + i);
-                v = _mm256_mul_ps(v, v_b);
-                _mm256_storeu_ps(ptr + i, v);
-            }
-            for (; i < len; ++i) ptr[i] *= brightness;
-#else
-            for (int64_t i = 0; i < len; ++i) ptr[i] *= brightness;
-#endif
-        }
+        if (normalize) simd_apply_brightness_normalize(ptr, len, brightness, mean, stdv);
+        else simd_apply_brightness(ptr, len, brightness);
 
-        return out;
+        int64_t lbl = labels.data_ptr<int64_t>()[index];
+        return py::make_tuple(sample, lbl);
     }
 
-    torch::Tensor get_image(int64_t index) const { return images[index]; }
-
-    int64_t get_label(int64_t index) const { return labels[index]; }
-
-    py::tuple get(int64_t index) const {
-        torch::Tensor img = augment_image(images[index]);
-        return py::make_tuple(img, labels[index]);
-    }
-
-    int64_t size() const { return (int64_t)images.size(); }
+    int64_t size() const { return (int64_t)images.size(0); }
 };
 
 // =======================================================
@@ -222,7 +240,7 @@ struct MNISTDataset {
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     py::class_<MNISTDataset>(m, "MNISTDataset")
-        .def(py::init<std::string, std::string>())
+        .def(py::init<const std::string&, const std::string&>())
         .def("__len__", &MNISTDataset::size)
         .def("__getitem__", &MNISTDataset::get)
         .def("enable_augmentation", &MNISTDataset::enable_augmentation)
@@ -239,8 +257,9 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
                 return py::make_tuple(d.images_path, d.labels_path);
             },
             [](py::tuple t) { // __setstate__
-                if (t.size() != 2)
+                if (t.size() != 2) {
                     throw std::runtime_error("Invalid state for MNISTDataset");
+                }
                 return MNISTDataset(t[0].cast<std::string>(),
                                     t[1].cast<std::string>());
             }

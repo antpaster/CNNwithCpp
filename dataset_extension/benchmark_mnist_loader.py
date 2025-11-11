@@ -4,7 +4,8 @@ from torchvision import datasets, transforms
 # import cpp_mnist_dataset_ext_many_workers as cpp_mnist_dataset_ext
 # import cpp_mnist_dataset_ext_many_workers_openmp as cpp_mnist_dataset_ext
 # import cpp_mnist_dataset_ext_many_workers_openmp_with_aug as cpp_mnist_dataset_ext
-import cpp_mnist_dataset_simd_ext_openmp_aug_avx2 as cpp_mnist_dataset_ext
+# import cpp_mnist_dataset_simd_ext_openmp_aug_avx2 as cpp_mnist_dataset_ext
+import cpp_mnist_contiguous_ext as cpp_mnist_dataset_ext
 
 def benchmark_loader(name, dataset, batch_size=64, num_workers=2, num_batches=500):
     loader = DataLoader(dataset, batch_size=batch_size, num_workers=num_workers)

@@ -1,7 +1,9 @@
+# python setup_mnist_dataset.py clean --all
+# python setup_mnist_dataset.py build_ext --inplace
+
 from setuptools import setup
 from torch.utils.cpp_extension import CppExtension, BuildExtension
 import sys
-import platform
 
 extra_compile_args = {"cxx": []}
 extra_link_args = []
@@ -14,10 +16,10 @@ else:
     extra_link_args = ["-fopenmp"]
 
 setup(
-    name="cpp_mnist_dataset_simd_ext_openmp_aug_avx2",
+    name="cpp_mnist_contiguous_ext",
     ext_modules=[
         CppExtension(
-            name="cpp_mnist_dataset_simd_ext_openmp_aug_avx2",
+            name="cpp_mnist_contiguous_ext",
             sources=["cpp_mnist_dataset.cpp"],
             extra_compile_args=extra_compile_args,
             extra_link_args=extra_link_args,
